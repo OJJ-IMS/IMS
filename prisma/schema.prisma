@@ -1,0 +1,458 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Organisation ──────────────────────────────────────────────────────────────
+
+model Organisation {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  industry    String?
+  size        String?
+  address     String?
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  documents    Document[]
+  staff        StaffMember[]
+  timesheets   Timesheet[]
+  projects     Project[]
+  assets       Asset[]
+  purchaseOrders PurchaseOrder[]
+}
+
+// ─── Users ──────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  SUPERVISOR
+  OPERATIVE
+  HSQE_MANAGER
+  COMMERCIAL_MANAGER
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  password       String?
+  name           String
+  role           UserRole     @default(OPERATIVE)
+  jobTitle       String?
+  phone          String?
+  avatar         String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  timesheetsApproved Timesheet[] @relation("ApprovedBy")
+  timesheetsSubmitted Timesheet[] @relation("SubmittedBy")
+  documentUploads Document[]
+  projectReports  SiteReport[]
+}
+
+// ─── Document Control (DM) ─────────────────────────────────────────────────────
+
+enum DocumentStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum DocumentCategory {
+  DRAWING
+  METHOD_STATEMENT
+  RISK_ASSESSMENT
+  POLICY
+  PROCEDURE
+  CERTIFICATE
+  FORM
+  REPORT
+  OTHER
+}
+
+model Document {
+  id           String           @id @default(cuid())
+  title        String
+  docNumber    String
+  revision     String           @default("A")
+  category     DocumentCategory
+  status       DocumentStatus   @default(DRAFT)
+  description  String?
+  fileUrl      String?
+  fileSize     Int?
+  mimeType     String?
+  tags         String[]
+  projectRef   String?
+  isControlled Boolean          @default(true)
+  expiryDate   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  uploadedById   String
+  uploadedBy     User         @relation(fields: [uploadedById], references: [id])
+
+  versions DocumentVersion[]
+}
+
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  revision   String
+  fileUrl    String
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+// ─── HR & Compliance (HC) ──────────────────────────────────────────────────────
+
+enum CompetencyStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+  PENDING
+}
+
+model StaffMember {
+  id             String    @id @default(cuid())
+  employeeId     String
+  name           String
+  jobTitle       String
+  department     String?
+  email          String?
+  phone          String?
+  startDate      DateTime
+  isActive       Boolean   @default(true)
+  emergencyName  String?
+  emergencyPhone String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  competencies   Competency[]
+  timesheets     Timesheet[]
+  assetAssignments AssetAssignment[]
+}
+
+enum CompetencyType {
+  PTS
+  SENTINEL
+  OLEC
+  COSS
+  FIRST_AID
+  MANUAL_HANDLING
+  WORKING_AT_HEIGHT
+  CONFINED_SPACES
+  ASBESTOS_AWARENESS
+  CSCS
+  CITB
+  IPAF
+  PASMA
+  ISO_INTERNAL_AUDITOR
+  DRIVING_LICENCE
+  NICEIC
+  OTHER
+}
+
+model Competency {
+  id           String           @id @default(cuid())
+  type         CompetencyType
+  certificateRef String?
+  issueDate    DateTime
+  expiryDate   DateTime
+  issuingBody  String?
+  fileUrl      String?
+  status       CompetencyStatus @default(VALID)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
+}
+
+// ─── Time Management (TM) ──────────────────────────────────────────────────────
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
+model Timesheet {
+  id           String          @id @default(cuid())
+  weekEnding   DateTime
+  status       TimesheetStatus @default(DRAFT)
+  totalHours   Float           @default(0)
+  regularHours Float           @default(0)
+  overtimeHours Float          @default(0)
+  travelHours  Float           @default(0)
+  notes        String?
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  rejectionReason String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  staffMemberId  String
+  staffMember    StaffMember  @relation(fields: [staffMemberId], references: [id])
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  submittedById  String?
+  submittedBy    User?        @relation("SubmittedBy", fields: [submittedById], references: [id])
+  approvedById   String?
+  approvedBy     User?        @relation("ApprovedBy", fields: [approvedById], references: [id])
+
+  entries TimesheetEntry[]
+}
+
+model TimesheetEntry {
+  id          String   @id @default(cuid())
+  date        DateTime
+  projectRef  String?
+  projectName String?
+  startTime   String
+  endTime     String
+  breakMins   Int      @default(0)
+  hours       Float
+  taskCode    String?
+  description String?
+  travelHours Float    @default(0)
+  expenses    Float    @default(0)
+
+  timesheetId String
+  timesheet   Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+}
+
+// ─── Project Delivery / WORM (PM) ──────────────────────────────────────────────
+
+enum ProjectStatus {
+  TENDERING
+  AWARDED
+  MOBILISING
+  ACTIVE
+  SUSPENDED
+  COMPLETE
+  CLOSED
+}
+
+model Project {
+  id             String        @id @default(cuid())
+  projectNumber  String
+  name           String
+  client         String
+  location       String?
+  status         ProjectStatus @default(ACTIVE)
+  startDate      DateTime
+  endDate        DateTime?
+  budget         Float
+  committedCost  Float         @default(0)
+  actualCost     Float         @default(0)
+  forecastCost   Float         @default(0)
+  revenue        Float         @default(0)
+  description    String?
+  contractRef    String?
+  networkRailRef String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  siteReports    SiteReport[]
+  earlyWarnings  EarlyWarning[]
+  wormsEntries   WORMEntry[]
+}
+
+model SiteReport {
+  id          String   @id @default(cuid())
+  reportDate  DateTime
+  reportNumber String
+  weather     String?
+  workforce   Int      @default(0)
+  activities  String
+  issues      String?
+  photos      String[]
+  materials   String?
+  plant       String?
+  visitors    String?
+  createdAt   DateTime @default(now())
+
+  projectId  String
+  project    Project @relation(fields: [projectId], references: [id])
+  authorId   String
+  author     User    @relation(fields: [authorId], references: [id])
+}
+
+enum EarlyWarningStatus {
+  OPEN
+  UNDER_REVIEW
+  AGREED
+  CLOSED
+  DISPUTED
+}
+
+model EarlyWarning {
+  id          String             @id @default(cuid())
+  ewNumber    String
+  title       String
+  description String
+  raisedDate  DateTime
+  status      EarlyWarningStatus @default(OPEN)
+  impact      String?
+  resolution  String?
+  closedDate  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+}
+
+model WORMEntry {
+  id           String   @id @default(cuid())
+  period       String
+  description  String
+  budgetValue  Float
+  actualValue  Float
+  variance     Float
+  varianceNote String?
+  createdAt    DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+}
+
+// ─── Materials & Asset Management (MM) ─────────────────────────────────────────
+
+enum AssetStatus {
+  AVAILABLE
+  IN_USE
+  IN_SERVICE
+  CALIBRATION_DUE
+  CONDEMNED
+  ON_HIRE
+  LOST
+}
+
+enum AssetCategory {
+  TOOL
+  PLANT
+  VEHICLE
+  TEST_EQUIPMENT
+  PPE
+  IT_EQUIPMENT
+  OTHER
+}
+
+model Asset {
+  id              String        @id @default(cuid())
+  assetNumber     String
+  name            String
+  category        AssetCategory
+  make            String?
+  model           String?
+  serialNumber    String?
+  purchaseDate    DateTime?
+  purchasePrice   Float?
+  location        String?
+  status          AssetStatus   @default(AVAILABLE)
+  calibrationDate DateTime?
+  nextServiceDate DateTime?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  assignments     AssetAssignment[]
+  vehicleChecks   VehicleCheck[]
+}
+
+model AssetAssignment {
+  id         String    @id @default(cuid())
+  assignedAt DateTime  @default(now())
+  returnedAt DateTime?
+  projectRef String?
+  notes      String?
+
+  assetId       String
+  asset         Asset       @relation(fields: [assetId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id])
+}
+
+model VehicleCheck {
+  id            String   @id @default(cuid())
+  checkDate     DateTime
+  mileage       Int?
+  fuelLevel     String?
+  tyres         Boolean  @default(true)
+  lights        Boolean  @default(true)
+  brakes        Boolean  @default(true)
+  wipers        Boolean  @default(true)
+  mirrors       Boolean  @default(true)
+  firstAidKit   Boolean  @default(true)
+  warningTriangle Boolean @default(true)
+  issues        String?
+  signature     String?
+  createdAt     DateTime @default(now())
+
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id])
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  poNumber    String
+  supplier    String
+  description String
+  orderDate   DateTime @default(now())
+  dueDate     DateTime?
+  totalValue  Float
+  status      String   @default("PENDING")
+  deliveredAt DateTime?
+  invoiceRef  String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  lineItems PurchaseOrderLine[]
+}
+
+model PurchaseOrderLine {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Float
+  unit        String?
+  unitPrice   Float
+  total       Float
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+}
