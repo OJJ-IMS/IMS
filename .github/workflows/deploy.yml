@@ -21,6 +21,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Verify required secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          missing=()
+          [ -z "$VERCEL_TOKEN" ]      && missing+=("VERCEL_TOKEN")
+          [ -z "$VERCEL_ORG_ID" ]     && missing+=("VERCEL_ORG_ID")
+          [ -z "$VERCEL_PROJECT_ID" ] && missing+=("VERCEL_PROJECT_ID")
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "Add them at: Settings → Secrets and variables → Actions"
+            echo "  - VERCEL_TOKEN:      https://vercel.com/account/tokens"
+            echo "  - VERCEL_ORG_ID:     from .vercel/project.json after 'vercel link'"
+            echo "  - VERCEL_PROJECT_ID: from .vercel/project.json after 'vercel link'"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -33,17 +52,29 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
+      - name: Pick Vercel environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "name=production" >> $GITHUB_OUTPUT
+            echo "flag=--prod" >> $GITHUB_OUTPUT
+          else
+            echo "name=preview" >> $GITHUB_OUTPUT
+            echo "flag=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Pull Vercel environment
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=${{ steps.env.outputs.name }} --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build project
-        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build ${{ steps.env.outputs.flag }} --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy to Vercel
         id: deploy
         run: |
-          URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          URL=$(vercel deploy --prebuilt ${{ steps.env.outputs.flag }} --token=${{ secrets.VERCEL_TOKEN }})
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
+          echo "Deployed: $URL" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment preview URL on PR
         if: github.event_name == 'pull_request'

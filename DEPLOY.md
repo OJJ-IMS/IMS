@@ -47,6 +47,20 @@ This creates the schema and demo login credentials:
 
 In Vercel project settings → Domains → add `www.theims.co.uk`
 
+### Step 5 — GitHub Actions auto-deploy
+
+The workflow at `.github/workflows/deploy.yml` deploys to Vercel on push.
+It needs three repo secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Where to get it |
+|---|---|
+| `VERCEL_TOKEN` | https://vercel.com/account/tokens |
+| `VERCEL_ORG_ID` | Run `vercel link` locally → `.vercel/project.json` |
+| `VERCEL_PROJECT_ID` | Same file as above |
+
+`main` deploys to production; other listed branches deploy as previews.
+Re-run any deploy manually via Actions → "Deploy to Vercel" → **Run workflow**.
+
 ---
 
 ## Local development
