@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - claude/build-ims-saas-platform-wO85p
+      - claude/todo-list-app-iky87
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
